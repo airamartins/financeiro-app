@@ -229,8 +229,15 @@
 
 <div class="toast" id="toast"></div>
 
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
 <script>
+async function gfetch(url,method='GET',body=null){
+  const opts={method,headers:{'Authorization':'Bearer '+token,'Content-Type':'application/json'}};
+  if(body)opts.body=JSON.stringify(body);
+  const res=await fetch(url,opts);
+  if(!res.ok)throw new Error(res.status);
+  return res.json();
+}
+
 const CLIENT_ID = '107902657965-3dr3ihr019evgvfbmcs8aainuvqbi4v9.apps.googleusercontent.com';
 const SCOPES = 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/drive.file';
 const SHEET_TITLE = 'Financeiro Pessoal - App';
@@ -446,9 +453,9 @@ async function handleCallback(){
 
 async function loadUserInfo(){
   try{
-    const r=await axios.get('https://www.googleapis.com/oauth2/v2/userinfo',{headers:{Authorization:'Bearer '+token}});
-    userName=r.data.name||'';
-    userEmail=r.data.email||'';
+    const r=await gfetch('https://www.googleapis.com/oauth2/v2/userinfo');
+    userName=r.name||'';
+    userEmail=r.email||'';
     localStorage.setItem('gUser',JSON.stringify({name:userName,email:userEmail}));
   }catch(e){}
 }
@@ -458,16 +465,12 @@ async function initSheet(){
   if(saved){sheetId=saved;return;}
   setSyncStatus('Criando planilha...');
   try{
-    const r=await axios.post('https://sheets.googleapis.com/v4/spreadsheets',
-      {properties:{title:SHEET_TITLE},sheets:[{properties:{title:'Lançamentos'}},{properties:{title:'Contas'}}]},
-      {headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'}}
-    );
-    sheetId=r.data.spreadsheetId;
+    const r=await gfetch('https://sheets.googleapis.com/v4/spreadsheets','POST',
+      {properties:{title:SHEET_TITLE},sheets:[{properties:{title:'Lançamentos'}},{properties:{title:'Contas'}}]});
+    sheetId=r.spreadsheetId;
     localStorage.setItem('sheetId',sheetId);
-    await axios.put(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Lançamentos!A1:H1?valueInputOption=RAW`,
-      {values:[['Data','Descrição','Categoria','Conta','Tipo','Pessoal/Empresarial','Valor','Timestamp']]},
-      {headers:{Authorization:'Bearer '+token}}
-    );
+    await gfetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Lançamentos!A1:H1?valueInputOption=RAW`,'PUT',
+      {values:[['Data','Descrição','Categoria','Conta','Tipo','Pessoal/Empresarial','Valor','Timestamp']]});
     setSyncStatus('Planilha criada',true);
   }catch(e){setSyncStatus('Erro ao criar planilha',false);}
 }
@@ -476,10 +479,8 @@ async function appendToSheet(entry){
   if(!token||!sheetId)return;
   setSyncStatus('Salvando...');
   try{
-    await axios.post(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Lançamentos!A:H:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,
-      {values:[[entry.data,entry.desc,entry.cat,entry.conta,entry.tipo,entry.subtipo,entry.tipo==='entrada'?entry.val:-entry.val,entry.ts]]},
-      {headers:{Authorization:'Bearer '+token}}
-    );
+    await gfetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Lançamentos!A:H:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`,'POST',
+      {values:[[entry.data,entry.desc,entry.cat,entry.conta,entry.tipo,entry.subtipo,entry.tipo==='entrada'?entry.val:-entry.val,entry.ts]]});
     setSyncStatus('Salvo',true);
   }catch(e){setSyncStatus('Erro ao salvar',false);}
 }
@@ -487,16 +488,14 @@ async function appendToSheet(entry){
 async function deleteFromSheet(entry){
   if(!token||!sheetId)return;
   try{
-    const r=await axios.get(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Lançamentos!H:H`,{headers:{Authorization:'Bearer '+token}});
-    const rows=r.data.values||[];
+    const r=await gfetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Lançamentos!H:H`);
+    const rows=r.values||[];
     const rowIdx=rows.findIndex(row=>row[0]==entry.ts);
     if(rowIdx<1)return;
-    const sheetMeta=await axios.get(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}`,{headers:{Authorization:'Bearer '+token}});
-    const sid=sheetMeta.data.sheets.find(s=>s.properties.title==='Lançamentos').properties.sheetId;
-    await axios.post(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`,
-      {requests:[{deleteDimension:{range:{sheetId:sid,dimension:'ROWS',startIndex:rowIdx,endIndex:rowIdx+1}}}]},
-      {headers:{Authorization:'Bearer '+token}}
-    );
+    const sheetMeta=await gfetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}`);
+    const sid=sheetMeta.sheets.find(s=>s.properties.title==='Lançamentos').properties.sheetId;
+    await gfetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}:batchUpdate`,'POST',
+      {requests:[{deleteDimension:{range:{sheetId:sid,dimension:'ROWS',startIndex:rowIdx,endIndex:rowIdx+1}}}]});
   }catch(e){}
 }
 
@@ -504,8 +503,8 @@ async function loadFromSheet(){
   if(!token||!sheetId)return;
   setSyncStatus('Carregando...');
   try{
-    const r=await axios.get(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Lançamentos!A2:H`,{headers:{Authorization:'Bearer '+token}});
-    const rows=r.data.values||[];
+    const r=await gfetch(`https://sheets.googleapis.com/v4/spreadsheets/${sheetId}/values/Lançamentos!A2:H`);
+    const rows=r.values||[];
     lancamentos=rows.map(row=>({
       data:row[0]||'',desc:row[1]||'',cat:row[2]||'',conta:row[3]||'',
       tipo:row[4]||'saida',subtipo:row[5]||'Pessoal',
