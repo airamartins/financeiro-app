@@ -538,14 +538,27 @@ function logout(){
 }
 
 async function init(){
-  const u=localStorage.getItem('gUser');
-  if(u){const d=JSON.parse(u);userName=d.name;userEmail=d.email;}
-  const sid=localStorage.getItem('sheetId');
-  if(sid)sheetId=sid;
-  const handled=await handleCallback();
-  if(!handled){
-    if(sheetId){setSyncStatus('Faça login para sincronizar');}
+  try{
+    const u=localStorage.getItem('gUser');
+    if(u){const d=JSON.parse(u);userName=d.name;userEmail=d.email;}
+    const sid=localStorage.getItem('sheetId');
+    if(sid)sheetId=sid;
     updateAuthUI();
+    updateAll();
+    const hash=window.location.hash.substring(1);
+    const params=new URLSearchParams(hash);
+    const t=params.get('access_token');
+    if(t){
+      window.history.replaceState(null,'',window.location.pathname);
+      token=t;
+      await loadUserInfo();
+      await initSheet();
+      await loadFromSheet();
+      updateAuthUI();
+    } else {
+      if(sheetId) setSyncStatus('Reconecte para sincronizar');
+    }
+  }catch(e){
     updateAll();
   }
 }
